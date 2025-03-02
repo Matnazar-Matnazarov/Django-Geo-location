@@ -1,0 +1,55 @@
+{% extends "gis/admin/openlayers.html" %}
+{% load static %}
+
+{% block extrastyle %}
+<style type="text/css">
+    #{{ id }}_map { width: {{ map_width }}px; height: {{ map_height }}px; }
+    #{{ id }}_map .aligned label { float: inherit; }
+    #{{ id }}_admin_map { position: relative; vertical-align: top; float: left; }
+    #{{ id }}_admin_map .olMap { width: {{ map_width }}px; height: {{ map_height }}px; }
+</style>
+{% endblock %}
+
+{% block map_code %}
+<script type="text/javascript">
+    {% block map_creation %}
+    function initialize_{{ module }}() {
+        {% if not lat or not lon %}
+        var center = new google.maps.LatLng({{ default_lat }}, {{ default_lon }});
+        {% else %}
+        var center = new google.maps.LatLng({{ lat }}, {{ lon }});
+        {% endif %}
+
+        var options = {
+            zoom: {{ zoom }},
+            center: center,
+            mapTypeId: google.maps.MapTypeId.ROADMAP,
+            streetViewControl: false
+        };
+
+        var map = new google.maps.Map(document.getElementById('{{ id }}_map'), options);
+        var marker = new google.maps.Marker({
+            position: center,
+            map: map,
+            draggable: true
+        });
+
+        // Update form fields on marker drag
+        google.maps.event.addListener(marker, 'dragend', function() {
+            var point = marker.getPosition();
+            document.getElementById('{{ id }}').value = 'POINT(' + point.lng() + ' ' + point.lat() + ')';
+        });
+
+        // Update marker position on map click
+        google.maps.event.addListener(map, 'click', function(event) {
+            marker.setPosition(event.latLng);
+            document.getElementById('{{ id }}').value = 'POINT(' + event.latLng.lng() + ' ' + event.latLng.lat() + ')';
+        });
+    }
+    {% endblock %}
+
+    {% block map_initialization %}
+    google.maps.event.addDomListener(window, 'load', initialize_{{ module }});
+    {% endblock %}
+</script>
+{% endblock %} 

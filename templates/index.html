@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geo Location Map</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts - Preconnect -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Custom Styles -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .map-container {
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            border-radius: 0.75rem;
+            overflow: hidden;
+        }
+        .btn {
+            @apply px-6 py-2.5 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2;
+        }
+        .btn-primary {
+            @apply bg-blue-600 hover:bg-blue-700 text-white focus:ring-blue-500;
+        }
+        .btn-success {
+            @apply bg-green-600 hover:bg-green-700 text-white focus:ring-green-500;
+        }
+        .loading-indicator {
+            display: none;
+            @apply fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50;
+        }
+    </style>
+    <!-- Roboto shriftini preload qilish -->
+   
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Loading Indicator -->
+    <div id="loadingIndicator" class="loading-indicator">
+        <div class="bg-white p-4 rounded-lg flex items-center space-x-3">
+            <div class="animate-spin rounded-full h-6 w-6 border-4 border-blue-500 border-t-transparent"></div>
+            <span class="text-gray-700">Yuklanmoqda...</span>
+        </div>
+    </div>
+
+    <div class="container mx-auto px-4 py-8">
+        <div class="bg-white rounded-xl shadow-sm p-6 max-w-4xl mx-auto">
+            <h1 class="text-3xl font-bold mb-6 text-gray-800">Joylashuv Xaritasi</h1>
+            
+            <!-- Map Container -->
+            <div class="map-container mb-6">
+                <div id="map" class="h-[500px] w-full"></div>
+            </div>
+
+            <!-- Control Buttons -->
+            <div class="flex gap-4">
+                <button id="getLocation" class="btn btn-primary">
+                    <span class="flex items-center">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        </svg>
+                        Mening Joylashuvim
+                    </span>
+                </button>
+                <button id="saveLocation" class="btn btn-success">
+                    <span class="flex items-center">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                        Saqlash
+                    </span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Google Maps Bootstrap Script -->
+    <script>
+        (g=>{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={});var d=b.maps||(b.maps={}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=`/maps-api/?`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))})({
+            v: "weekly"
+        });
+    </script>
+
+    <!-- Google Maps Loading Script -->
+    <script>
+        let map, currentMarker, userLocation;
+
+        async function initMap() {
+            try {
+                // Import required libraries
+                const { Map } = await google.maps.importLibrary("maps");
+                const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
+                
+                // Get map ID from server
+                const response = await fetch('/maps-api/config/');
+                const config = await response.json();
+                
+                const mapOptions = {
+                    center: { lat: 41.3111, lng: 69.2797 },
+                    zoom: 13,
+                    mapTypeControl: true,
+                    mapTypeControlOptions: {
+                        style: google.maps.MapTypeControlStyle.HORIZONTAL_BAR,
+                        position: google.maps.ControlPosition.TOP_RIGHT,
+                        mapTypeIds: [
+                            google.maps.MapTypeId.ROADMAP,
+                            google.maps.MapTypeId.SATELLITE,
+                            google.maps.MapTypeId.HYBRID,
+                            google.maps.MapTypeId.TERRAIN
+                        ]
+                    },
+                    streetViewControl: false,
+                    fullscreenControl: true,
+                    zoomControl: true,
+                    mapId: config.mapId
+                };
+
+                map = new Map(document.getElementById("map"), mapOptions);
+
+                // Map click handler
+                map.addListener("click", async function(e) {
+                    if (currentMarker) {
+                        currentMarker.map = null;
+                    }
+                    
+                    // Geocoding so'rovi
+                    const geocoder = new google.maps.Geocoder();
+                    geocoder.geocode({ location: e.latLng }, (results, status) => {
+                        if (status === "OK" && results[0]) {
+                            let buildingName = '';
+                            // Bino nomini izlash
+                            for (const component of results[0].address_components) {
+                                if (component.types.includes('point_of_interest') || 
+                                    component.types.includes('establishment')) {
+                                    buildingName = component.long_name;
+                                    break;
+                                }
+                            }
+                            
+                            currentMarker = new AdvancedMarkerElement({
+                                map: map,
+                                position: e.latLng,
+                                title: buildingName || results[0].formatted_address
+                            });
+                        } else {
+                            currentMarker = new AdvancedMarkerElement({
+                                map: map,
+                                position: e.latLng
+                            });
+                        }
+                    });
+                    
+                    userLocation = e.latLng;
+                });
+
+                // Add event listeners
+                document.getElementById("getLocation").addEventListener("click", handleGetLocation);
+                document.getElementById("saveLocation").addEventListener("click", handleSaveLocation);
+
+            } catch (error) {
+                console.error("Xarita yuklanishida xatolik:", error);
+                showNotification("Xarita yuklanishida xatolik yuz berdi", "error");
+            }
+        }
+
+        // Start loading the map when the page loads
+        document.addEventListener("DOMContentLoaded", initMap);
+
+        // Get location handler
+        async function handleGetLocation() {
+            if (!navigator.geolocation) {
+                showNotification("Brauzeringiz geolokatsiyani qo'llab-quvvatlamaydi.", 'error');
+                return;
+            }
+
+            showLoading();
+            try {
+                const position = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 0
+                    });
+                });
+
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                const accuracy = position.coords.accuracy;
+                
+                if (currentMarker) {
+                    currentMarker.map = null;
+                }
+                
+                const latLng = { lat, lng };
+                userLocation = latLng;
+                
+                const {AdvancedMarkerElement} = await google.maps.importLibrary('marker');
+                currentMarker = new AdvancedMarkerElement({
+                    map: map,
+                    position: latLng,
+                    title: `Aniqlik: ${Math.round(accuracy)} metr`
+                });
+                
+                map.setCenter(latLng);
+                map.setZoom(16);
+                
+            } catch (error) {
+                let errorMessage = "Xatolik yuz berdi. Qayta urinib ko'ring.";
+                if (error.code) {
+                    switch(error.code) {
+                        case error.PERMISSION_DENIED:
+                            errorMessage = "Joylashuvni aniqlash uchun ruxsat berilmadi.";
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            errorMessage = "Joylashuv ma'lumotlari mavjud emas.";
+                            break;
+                        case error.TIMEOUT:
+                            errorMessage = "So'rov vaqti tugadi.";
+                            break;
+                    }
+                }
+                showNotification(errorMessage, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Save location handler
+        async function handleSaveLocation() {
+            if (!userLocation) {
+                showNotification("Iltimos, xaritadan joy tanlang yoki joylashuvga ruxsat bering!", 'warning');
+                return;
+            }
+
+            showLoading();
+            const latitude = typeof userLocation.lat === 'function' ? userLocation.lat() : userLocation.lat;
+            const longitude = typeof userLocation.lng === 'function' ? userLocation.lng() : userLocation.lng;
+
+            try {
+                const response = await fetch('', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify({
+                        latitude: latitude,
+                        longitude: longitude
+                    })
+                });
+                
+                const data = await response.json();
+                hideLoading();
+                
+                if (data.status === 'success') {
+                    let message = data.address;
+                    if (data.building_name) {
+                        message = `${data.building_name}\n${data.address}`;
+                    }
+                    showNotification(`Joylashuv saqlandi: ${message}`, 'success');
+                } else {
+                    showNotification(data.message || 'Xatolik yuz berdi', 'error');
+                }
+            } catch (error) {
+                hideLoading();
+                showNotification('Serverga ulanishda xatolik!', 'error');
+                console.error('Error:', error);
+            }
+        }
+    </script>
+
+    <script>
+        // Loading indicator functions
+        const showLoading = () => document.getElementById('loadingIndicator').style.display = 'flex';
+        const hideLoading = () => document.getElementById('loadingIndicator').style.display = 'none';
+
+        // CSRF token function
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        // Notification function
+        function showNotification(message, type = 'info') {
+            const colors = {
+                success: 'bg-green-500',
+                error: 'bg-red-500',
+                warning: 'bg-yellow-500',
+                info: 'bg-blue-500'
+            };
+
+            const notification = document.createElement('div');
+            notification.className = `fixed top-4 right-4 ${colors[type]} text-white px-6 py-3 rounded-lg shadow-lg transform transition-all duration-500 translate-x-full`;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+
+            // Animate in
+            setTimeout(() => {
+                notification.style.transform = 'translateX(0)';
+            }, 100);
+
+            // Remove after 3 seconds
+            setTimeout(() => {
+                notification.style.transform = 'translateX(full)';
+                setTimeout(() => {
+                    document.body.removeChild(notification);
+                }, 500);
+            }, 3000);
+        }
+    </script>
+
+    <!-- Add favicon -->
+    <link rel="icon" href="data:,">
+</body>
+</html>
